@@ -2,24 +2,28 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"runtime"
 	"sync"
+	"thread-pool/api/words"
 	"time"
 )
 
 var numberOfWorkers int
-var waitGrup sync.WaitGroup
+var numberOfRandomWords int
+var waitGroup sync.WaitGroup
 
 /* Initialize the amount of workers according to the number of CPU existent on the running machine. */
 func init() {
 	numberOfWorkers = runtime.NumCPU()
+	numberOfRandomWords = 10000
 }
 
-func calculateArea(queueChannel <-chan string, workerId int) {
-	for msg := range <-queueChannel {
-		fmt.Printf("Worker %d Got the Message: %s", workerId, msg)
+func readMessage(queueChannel chan string, workerId int) {
+	for msg := range queueChannel {
+		fmt.Printf("Worker %d Got the Message: %s\n", workerId, msg)
 	}
-	waitGrup.Done()
+	waitGroup.Done()
 }
 
 func main() {
@@ -27,17 +31,27 @@ func main() {
 	will be picked up by an available worker. */
 	queueChannel := make(chan string, 250)
 	launchWorkers(queueChannel, numberOfWorkers)
-	waitGrup.Add(numberOfWorkers)
+	waitGroup.Add(numberOfWorkers)
 	startTime := time.Now()
+
 	// Send values to queue
+	wordsApi := words.NewApi("https://random-word-api.herokuapp.com/word")
+	randomWords, err := wordsApi.GetRandom(numberOfRandomWords)
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, word := range randomWords {
+		queueChannel <- word
+	}
+
 	close(queueChannel)
 	timeElapsed := time.Since(startTime)
-	waitGrup.Wait()
+	waitGroup.Wait()
 	fmt.Printf("Process took %s seconds.\n", timeElapsed)
 }
 
-func launchWorkers(queueChannel <-chan string, workersAmount int) {
+func launchWorkers(queueChannel chan string, workersAmount int) {
 	for workerId := 0; workerId < workersAmount; workerId++ {
-		go calculateArea(queueChannel, workerId)
+		go readMessage(queueChannel, workerId)
 	}
 }
